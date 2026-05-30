@@ -46,8 +46,12 @@ jinja2==3.1.4              # HTML template engine for the resume PDF layout.
 markdown-it-py==3.0.0      # Markdown → HTML conversion.
 
 # --- Gmail watcher (Phase 7) ------------------------------------------------
+# google-auth bumped from 2.35.0 → 2.53.0 because google-genai 2.7.0
+# requires >=2.48.1. The mismatch failed pip's resolver on a clean install
+# (verified on the first GitHub Actions cron run). Versions below are
+# what's actually installed in Sourabh's local venv as of 2026-05-30.
 google-api-python-client==2.147.0
-google-auth==2.35.0
+google-auth==2.53.0
 google-auth-oauthlib==1.2.1
 google-auth-httplib2==0.2.0
 

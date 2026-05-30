@@ -1,0 +1,63 @@
+# =============================================================================
+# requirements.txt — Job Hunt Agent
+# All dependencies pinned to known-good versions (as of May 2026).
+# Install:  python -m pip install -r requirements.txt
+#
+# A note on Python versions: this project targets Python 3.11 / 3.12.
+# You currently have 3.14.5 — most of these libs should work, but if any
+# wheel fails to build, the most likely culprits are weasyprint and
+# pdfplumber (native deps). Fallbacks are noted next to each.
+# =============================================================================
+
+# --- Core: LLM providers (Phases 3, 4, 7, 8) --------------------------------
+# Both SDKs are installed; config.LLM_PROVIDER picks which one is used at
+# runtime. anthropic is the paid path (Hybrid ~$6-10/mo); google-genai is
+# the free path (Gemini 2.0 Flash, 1500 req/day free tier). Sourabh chose
+# Gemini Free at Phase 1 wrap-up — anthropic is here so flipping providers
+# stays a one-line .env change with no re-install.
+anthropic==0.105.2
+google-genai==2.7.0
+
+# --- HTTP + retries (Phases 2, 3, 7) ----------------------------------------
+requests==2.32.3
+tenacity==9.0.0            # Exponential backoff for API/rate-limit failures.
+
+# --- Job fetcher (Phase 2) --------------------------------------------------
+feedparser==6.0.11         # LinkedIn / Wellfound RSS parsing.
+
+# --- Config + validation (all phases) ---------------------------------------
+python-dotenv==1.0.1       # Load .env into os.environ.
+pydantic==2.13.4           # Typed models for Job, Resume, ScoredJob, etc.
+
+# --- Resume parsing (Phase 1) -----------------------------------------------
+# pdfplumber reads the source resume PDF. If install fails on Python 3.14,
+# alternatives: pypdf (pure-python, less accurate) or pymupdf (faster but
+# AGPL-licensed). We can swap if needed.
+pdfplumber==0.11.9
+
+# --- PDF generation (Phase 5) -----------------------------------------------
+# weasyprint converts our tailored resume HTML/Markdown into ATS-friendly PDF.
+# It needs GTK on Windows — install via:
+#   https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer
+# If GTK install is too painful, we have a Phase 5 fallback plan: reportlab
+# (pure-python, harder to style) or playwright (chromium-based, larger).
+weasyprint==68.1
+jinja2==3.1.4              # HTML template engine for the resume PDF layout.
+markdown-it-py==3.0.0      # Markdown → HTML conversion.
+
+# --- Gmail watcher (Phase 7) ------------------------------------------------
+google-api-python-client==2.147.0
+google-auth==2.35.0
+google-auth-oauthlib==1.2.1
+google-auth-httplib2==0.2.0
+
+# --- Date/time handling (all phases) ----------------------------------------
+python-dateutil==2.9.0.post0
+pytz==2024.2               # IST timezone for the 8 AM daily run schedule.
+
+# --- Terminal UX (Phase 6 db_viewer, optional digest mirror) ----------------
+rich==13.9.4               # Pretty tables, color, progress bars in CLI.
+
+# --- Testing (optional but recommended) -------------------------------------
+pytest==8.3.3
+pytest-mock==3.14.0

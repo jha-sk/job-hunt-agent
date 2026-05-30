@@ -1,0 +1,130 @@
+{
+  "name": "Sourabh Jha",
+  "contact": {
+    "email": "codewithsourabhjha@gmail.com",
+    "phone": "+91 76939 03439",
+    "linkedin": "https://www.linkedin.com/in/sk-jha",
+    "github": "https://github.com/jha-sk",
+    "location": "Gurugram, India"
+  },
+  "summary": "",
+  "skills": {
+    "languages": [
+      "Go",
+      "Java",
+      "Python",
+      "C++",
+      "TypeScript",
+      "Bash"
+    ],
+    "backend_apis": [
+      "REST APIs",
+      "Microservices",
+      "Echo",
+      "Gorilla Mux",
+      "Node.js",
+      "Express.js"
+    ],
+    "cloud_devops": [
+      "AWS",
+      "Azure",
+      "GCP",
+      "Docker",
+      "Kubernetes",
+      "Terraform",
+      "Helm",
+      "GitHub Actions",
+      "CI/CD"
+    ],
+    "databases": [
+      "MongoDB",
+      "PostgreSQL"
+    ],
+    "tools": [
+      "Linux",
+      "Git",
+      "Prometheus",
+      "Grafana",
+      "ELK",
+      "Docker Compose"
+    ],
+    "security": [
+      "Microsoft Security Operations",
+      "SIEM",
+      "Incident Response",
+      "Secure Coding"
+    ],
+    "ai_augmented_engineering": [
+      "Prompt Engineering",
+      "LLM-Assisted Development",
+      "Workflow Automation"
+    ],
+    "practices": [
+      "Agile",
+      "Code Review",
+      "Root Cause Analysis",
+      "Performance Optimization"
+    ]
+  },
+  "certifications": [
+    "Microsoft Certified: Security Operations Analyst Associate",
+    "Simple Golang Projects — Udemy (Akhil Sharma)"
+  ],
+  "experience": [
+    {
+      "title": "Associate Software Engineer",
+      "company": "Accenture Solutions Pvt Ltd",
+      "dates": "Nov 2024 – Present",
+      "bullets": [
+        "Delivered backend enhancements and production fixes for enterprise-scale web content management platforms using Java, REST APIs, and Git workflows.",
+        "Investigated and resolved 50+ production issues across development, staging, and production environments through root-cause analysis and permanent corrective actions.",
+        "Improved backend service performance by 20% through API optimization, code refactoring, and data-flow improvements.",
+        "Enhanced CI/CD workflows using Docker and GitHub Actions, reducing deployment turnaround time by 15–20%.",
+        "Maintained 99.9% system availability through deployment support, monitoring, issue triaging, and incident resolution.",
+        "Reduced MTTR by 30% through observability improvements, proactive log analysis, and monitoring enhancements.",
+        "Collaborated with QA teams, business stakeholders, and release managers to support critical enterprise releases across multiple environments.",
+        "Leveraged AI-assisted development workflows for debugging, documentation, architecture exploration, and productivity improvements."
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "name": "Ash OS",
+      "stack": "Linux, Shell, Lua, GitHub Actions, Docker",
+      "link": "GitHub",
+      "bullets": [
+        "Developed a lightweight Linux distribution optimized for older hardware with enhanced audio and performance.",
+        "Achieved 66.7% lower storage usage and 24% lower RAM consumption compared to Fedora.",
+        "Automated ISO build and release flow using Docker and GitHub Actions."
+      ]
+    },
+    {
+      "name": "Website Nativefier",
+      "stack": "Go, Electron, Tailwind, Docker, Kubernetes, Terraform, Azure",
+      "link": "",
+      "bullets": [
+        "Built a Go-based tool that converts websites into native-like Electron apps.",
+        "Deployed the tool using Docker, AKS, and Terraform with automated CI/CD via GitHub Actions."
+      ]
+    },
+    {
+      "name": "Git Automation CLI",
+      "stack": "Go, Cobra, fsnotify, Git",
+      "link": "",
+      "bullets": [
+        "Built a Git repository monitoring tool capable of tracking branch creation, deletion, commits, merges, and repository activity in real time.",
+        "Implemented filesystem event monitoring using fsnotify and Git metadata inspection through native Git commands.",
+        "Developed persistent logging, colorized terminal output, and multi-repository monitoring capabilities.",
+        "Designed for developer productivity, repository auditing, and engineering workflow automation."
+      ]
+    }
+  ],
+  "education": [
+    {
+      "degree": "Bachelor of Technology in Computer Science and Engineering",
+      "institution": "SRM University Sonepat, Haryana",
+      "status": "Graduated",
+      "cgpa": "CGPA: 7.72"
+    }
+  ]
+}

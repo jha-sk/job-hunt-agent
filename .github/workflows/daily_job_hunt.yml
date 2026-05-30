@@ -1,0 +1,194 @@
+# =============================================================================
+# .github/workflows/daily_job_hunt.yml — Phase 11 GitHub Actions cron
+#
+# Runs the full Job Hunt Agent pipeline every morning at 08:00 IST
+# (02:30 UTC) and also exposes a manual "Run workflow" button in the
+# Actions UI for on-demand runs.
+#
+# What this workflow does:
+#   1. Boots Ubuntu (which has GTK out of the box for WeasyPrint).
+#   2. Installs Python 3.12 + project deps from requirements.txt.
+#   3. Materialises secrets into the files the code expects:
+#        - .env (LLM keys, Adzuna keys, digest recipient)
+#        - credentials.json (Gmail OAuth desktop-app client)
+#        - token.json (cached Gmail refresh token)
+#   4. Runs `python scripts/run_pipeline.py`.
+#   5. Uploads generated PDFs / tailored .md / quizzes / reports as
+#      Actions artifacts (auto-expire after 90 days).
+#   6. Commits the SQLite DB + small markdown reports back to the repo
+#      so memory + applications + email_events survive across runs.
+#
+# Required GitHub Secrets (see SETUP.md for how to add each one):
+#   GEMINI_API_KEY          — Gemini API key
+#   ADZUNA_APP_ID           — Adzuna application id   (optional)
+#   ADZUNA_APP_KEY          — Adzuna api key          (optional)
+#   GMAIL_CREDENTIALS_JSON  — full contents of credentials.json
+#   GMAIL_TOKEN_JSON        — full contents of token.json (refresh-token bearer)
+#   DIGEST_RECIPIENT_EMAIL  — where the daily digest goes
+#
+# Optional secrets (skip if not using):
+#   ANTHROPIC_API_KEY       — if you've switched LLM_PROVIDER=anthropic
+#   RAPIDAPI_KEY            — if you re-enabled JSearch
+# =============================================================================
+
+name: Daily Job Hunt
+
+on:
+  schedule:
+    # 02:30 UTC = 08:00 IST. UTC-only — GitHub Actions ignores DST.
+    - cron: '30 2 * * *'
+
+  # Manual trigger — appears as a "Run workflow" button in Actions tab.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run without sending emails or making changes (true/false)'
+        type: boolean
+        default: false
+      skip_phases:
+        description: 'Comma-separated phase names to skip (e.g. gmail_watcher,pdf_generator)'
+        type: string
+        default: ''
+
+# We need write access to commit the updated SQLite DB back to the repo.
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    # Generous timeout: scoring 30 jobs at 5 RPM ≈ 6 min, plus everything
+    # else ≈ 4 min. 30 min cap is comfortable.
+    timeout-minutes: 30
+
+    steps:
+      # -------------------------------------------------------------------
+      # 1. Check out the repo (includes the SQLite DB from prior runs)
+      # -------------------------------------------------------------------
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          # We push back to main at the end — full history makes that safer.
+          fetch-depth: 0
+
+      # -------------------------------------------------------------------
+      # 2. Python toolchain. Pinned to 3.12 (mature wheels for our deps).
+      #    Sourabh uses 3.14 locally but 3.12 is the safer cron version.
+      # -------------------------------------------------------------------
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+
+      # -------------------------------------------------------------------
+      # 3. System packages WeasyPrint needs (the GTK/Pango stack)
+      # -------------------------------------------------------------------
+      - name: Install GTK + Pango (for WeasyPrint)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libcairo2
+
+      # -------------------------------------------------------------------
+      # 4. Python deps
+      # -------------------------------------------------------------------
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # -------------------------------------------------------------------
+      # 5. Materialise secrets → files the code expects
+      # -------------------------------------------------------------------
+      - name: Write .env from secrets
+        run: |
+          cat > .env <<'EOF'
+          LLM_PROVIDER=gemini
+          GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_MODEL_SCORER=gemini-2.5-flash
+          GEMINI_MODEL_TAILOR=gemini-2.5-flash-lite
+          ADZUNA_APP_ID=${{ secrets.ADZUNA_APP_ID }}
+          ADZUNA_APP_KEY=${{ secrets.ADZUNA_APP_KEY }}
+          RAPIDAPI_KEY=${{ secrets.RAPIDAPI_KEY }}
+          DIGEST_RECIPIENT_EMAIL=${{ secrets.DIGEST_RECIPIENT_EMAIL }}
+          EOF
+
+      - name: Write credentials.json
+        # Skip silently when the secret isn't configured — the gmail
+        # phases will then skip too with their normal "credentials missing"
+        # log line. The pipeline still runs and the digest goes nowhere
+        # (which is loud enough to notice).
+        if: env.HAS_CREDS == 'true'
+        env:
+          HAS_CREDS: ${{ secrets.GMAIL_CREDENTIALS_JSON != '' }}
+        run: |
+          printf '%s' '${{ secrets.GMAIL_CREDENTIALS_JSON }}' > credentials.json
+
+      - name: Write token.json
+        if: env.HAS_TOKEN == 'true'
+        env:
+          HAS_TOKEN: ${{ secrets.GMAIL_TOKEN_JSON != '' }}
+        run: |
+          printf '%s' '${{ secrets.GMAIL_TOKEN_JSON }}' > token.json
+
+      # -------------------------------------------------------------------
+      # 6. Run the pipeline
+      # -------------------------------------------------------------------
+      - name: Run pipeline
+        env:
+          # Manual-trigger input pass-through.
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          SKIP_PHASES: ${{ github.event.inputs.skip_phases || '' }}
+        run: |
+          ARGS=""
+          [ "$DRY_RUN" = "true" ] && ARGS="$ARGS --dry-run"
+          if [ -n "$SKIP_PHASES" ]; then
+            for p in $(echo "$SKIP_PHASES" | tr ',' ' '); do
+              ARGS="$ARGS --skip $p"
+            done
+          fi
+          echo "Running: python scripts/run_pipeline.py $ARGS"
+          python scripts/run_pipeline.py $ARGS
+
+      # -------------------------------------------------------------------
+      # 7. Upload all generated artefacts so they're inspectable from the
+      #    Actions UI even when the repo doesn't commit them.
+      # -------------------------------------------------------------------
+      - name: Upload daily artefacts
+        if: always()   # always — useful for debugging failed runs too
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-${{ github.run_id }}
+          retention-days: 30
+          path: |
+            data/raw_jobs_*.json
+            data/scored_jobs_*.json
+            data/job_hunt.db
+            quizzes/quiz_*.md
+            resumes/tailored/*.md
+            resumes/pdf/*.pdf
+            reports/*.md
+            logs/*.log
+            logs/*.jsonl
+
+      # -------------------------------------------------------------------
+      # 8. Commit DB + small markdown history back to main.
+      #    Files committed: SQLite DB, quizzes, weekly reports, the
+      #    .gitkeep / structure files. PDFs + raw JSON stay out (size).
+      # -------------------------------------------------------------------
+      - name: Commit DB + reports back to repo
+        if: success()
+        run: |
+          git config user.name  "Job Hunt Bot"
+          git config user.email "bot@jobhunt.local"
+          git add data/job_hunt.db quizzes/ reports/ logs/.gitkeep || true
+          # Only commit if something actually changed.
+          if git diff --staged --quiet; then
+            echo "no changes to commit"
+          else
+            git commit -m "daily run: $(date -u +'%Y-%m-%d')"
+            git push
+          fi

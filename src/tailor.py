@@ -57,7 +57,7 @@ from config import (  # noqa: E402
     RESUMES_TAILORED_DIR,
 )
 from src import db                    # noqa: E402
-from src.llm_client import LLMClient  # noqa: E402
+from src.llm_client import DailyQuotaExhausted, LLMClient  # noqa: E402
 
 log = logging.getLogger("tailor")
 
@@ -500,6 +500,7 @@ def tailor_one(
 ) -> tuple[TailoredResume | None, str | None]:
     """
     Tailor ONE job. Returns (edits, error_msg). On success error_msg is None.
+    Raises DailyQuotaExhausted so the caller stops the per-job loop.
     """
     try:
         edits, _usage = client.complete_json(
@@ -510,6 +511,8 @@ def tailor_one(
             max_output_tokens=2048,    # tailor output is bigger than scorer
         )
         return edits, None
+    except DailyQuotaExhausted:
+        raise
     except Exception as exc:  # noqa: BLE001 — never let one bad tailoring kill the batch
         return None, str(exc)
 
@@ -553,13 +556,23 @@ def run(
     written: list[Path] = []
     failures: list[tuple[str, str]] = []
 
+    quota_hit = False
     for i, scored in enumerate(top_n_records, 1):
         job = scored["job"]
         log.info("tailoring %d/%d: %s @ %s",
                  i, len(top_n_records), job["title"], job["company"])
 
         started = time.monotonic()
-        edits, err = tailor_one(client, resume_json, resume_md, scored)
+        try:
+            edits, err = tailor_one(client, resume_json, resume_md, scored)
+        except DailyQuotaExhausted:
+            log.warning(
+                "tailor: daily quota exhausted after %d/%d resumes. Stopping early. "
+                "Already-tailored resumes are saved; tomorrow's run resumes the rest.",
+                i - 1, len(top_n_records),
+            )
+            quota_hit = True
+            break
         elapsed = time.monotonic() - started
 
         if err:
@@ -614,7 +627,14 @@ def run(
     # Update today's daily_runs row with the count of resumes tailored.
     # `written` contains BOTH the .md and .changes.md per job, so divide by 2.
     try:
-        db.upsert_daily_run(today, resumes_tailored=len(written) // 2)
+        db.upsert_daily_run(
+            today,
+            resumes_tailored=len(written) // 2,
+            errors=(
+                f"tailor: daily Gemini quota exhausted after "
+                f"{len(written) // 2}/{len(top_n_records)} resumes"
+            ) if quota_hit else None,
+        )
     except Exception as db_exc:  # noqa: BLE001
         log.warning("tailor: db daily_runs update failed: %s", db_exc)
 

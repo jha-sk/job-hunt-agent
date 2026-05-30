@@ -57,7 +57,7 @@ from config import (  # noqa: E402
     TOP_JOBS_PER_DAY,
 )
 from src import db                    # noqa: E402
-from src.llm_client import LLMClient  # noqa: E402
+from src.llm_client import DailyQuotaExhausted, LLMClient  # noqa: E402
 from src.models import Job             # noqa: E402
 from src import token_log              # noqa: E402
 
@@ -232,6 +232,9 @@ def score_one_job(client: LLMClient, job: Job, resume_md: str) -> Optional[Score
     Score a single job. Returns None on irrecoverable failure (logged) so
     the caller can skip and continue rather than abort the whole run.
     """
+    # The LLM call is split out so we can specifically propagate the
+    # daily-quota signal without entangling it in the broader except
+    # block (which suppresses errors so one bad job doesn't kill the run).
     try:
         score, _usage = client.complete_json(
             system=SYSTEM_PROMPT,
@@ -239,26 +242,32 @@ def score_one_job(client: LLMClient, job: Job, resume_md: str) -> Optional[Score
             schema=JobScore,
             job_id=job.job_id,
         )
-        scored = ScoredJob(job=job, score=score)
-        # Persist immediately — if a later job fails, we still keep this one
-        # in the DB rather than only in the eventual scored_jobs.json.
-        try:
-            db.update_job_score(
-                job.job_id,
-                match_score=score.match_score,
-                recommended_action=score.recommended_action,
-                confidence=score.confidence,
-                score_reasoning=score.score_reasoning,
-                reasons_for_fit=score.reasons_for_fit,
-                gaps=score.gaps,
-            )
-        except Exception as db_exc:  # noqa: BLE001 — log but don't lose the score
-            log.warning("scorer: db persist failed for %s: %s", job.job_id, db_exc)
-        return scored
+    except DailyQuotaExhausted:
+        # Re-raise so run() can break the per-job loop instead of burning
+        # ~15 min of doomed retries on every remaining job today.
+        raise
     except Exception as exc:  # noqa: BLE001 — one bad job shouldn't kill the run
         log.error("scorer: failed on %s (%s @ %s): %s",
                   job.job_id, job.title, job.company, exc)
         return None
+
+    scored = ScoredJob(job=job, score=score)
+
+    # Persist immediately — if a later job fails, we still keep this one
+    # in the DB rather than only in the eventual scored_jobs.json.
+    try:
+        db.update_job_score(
+            job.job_id,
+            match_score=score.match_score,
+            recommended_action=score.recommended_action,
+            confidence=score.confidence,
+            score_reasoning=score.score_reasoning,
+            reasons_for_fit=score.reasons_for_fit,
+            gaps=score.gaps,
+        )
+    except Exception as db_exc:  # noqa: BLE001 — log but don't lose the score
+        log.warning("scorer: db persist failed for %s: %s", job.job_id, db_exc)
+    return scored
 
 
 def run(
@@ -286,8 +295,22 @@ def run(
 
     started = time.monotonic()
     scored: list[ScoredJob] = []
+    quota_hit = False
     for i, job in enumerate(jobs, 1):
-        result = score_one_job(client, job, resume_md)
+        try:
+            result = score_one_job(client, job, resume_md)
+        except DailyQuotaExhausted:
+            # Today's free-tier daily cap is gone. Stop now — re-running
+            # would just burn ~15 min in doomed retries per remaining job.
+            # The jobs scored so far are already persisted; tomorrow's
+            # cron will re-fetch them and score the rest with fresh quota.
+            log.warning(
+                "scorer: daily quota exhausted after %d/%d jobs. Stopping early. "
+                "Already-scored jobs are persisted; tomorrow's run resumes the rest.",
+                i - 1, len(jobs),
+            )
+            quota_hit = True
+            break
         if result is None:
             continue
         scored.append(result)
@@ -328,6 +351,10 @@ def run(
             jobs_scored=len(scored),
             top_jobs_count=len(top_n),
             token_usage=token_log.todays_usage(),
+            errors=(
+                f"scorer: daily Gemini quota exhausted after "
+                f"{len(scored)} jobs — {len(jobs) - len(scored)} unscored"
+            ) if quota_hit else None,
         )
 
     _print_summary_table(scored, top_n)

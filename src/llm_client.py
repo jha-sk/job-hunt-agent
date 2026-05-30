@@ -93,6 +93,16 @@ class TransientLLMError(Exception):
     """Network blips, 429s, 5xx — worth retrying."""
 
 
+class DailyQuotaExhausted(RuntimeError):
+    """
+    The provider's PER-DAY free-tier quota is gone. Distinct from
+    TransientLLMError because there's no point retrying — the quota
+    only resets at midnight Pacific. Callers (scorer/tailor/quiz) should
+    catch this and break out of their per-item loop instead of burning
+    ~15 minutes on doomed retries.
+    """
+
+
 # =============================================================================
 # The unified client
 # =============================================================================
@@ -156,8 +166,21 @@ class LLMClient:
                     )
                 raise ValueError(f"Unknown LLM_PROVIDER={self.provider!r}")
             except Exception as exc:
-                # Tag retry-worthy failures so tenacity catches them.
                 msg = str(exc).lower()
+                # CHECK DAILY-QUOTA EXHAUSTION FIRST — it looks like a
+                # 429 too, but retrying it is pointless (quota resets at
+                # midnight Pacific). We want callers to abort their loop.
+                # Signature varies a bit across providers; cover common phrasings:
+                #   - "GenerateRequestsPerDayPerProjectPerModel" (Gemini)
+                #   - "requests per day" / "per-day" / "daily quota"
+                if (
+                    "generaterequestsperday" in msg.replace(" ", "")
+                    or "requests per day" in msg
+                    or "perdayperproject" in msg.replace(" ", "")
+                    or "daily quota" in msg
+                ):
+                    raise DailyQuotaExhausted(str(exc)) from exc
+                # Per-minute throttles, network blips, 5xx — retry these.
                 if any(s in msg for s in (
                     "429", "rate limit", "resource_exhausted", "timeout",
                     "500", "502", "503", "504", "deadline",

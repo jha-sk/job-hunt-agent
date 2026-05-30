@@ -42,7 +42,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 import logging
 import sys
 import time
@@ -62,7 +61,7 @@ from config import (  # noqa: E402
     QUIZZES_DIR,
 )
 from src import db  # noqa: E402
-from src.llm_client import LLMClient  # noqa: E402
+from src.llm_client import DailyQuotaExhausted, LLMClient  # noqa: E402
 
 log = logging.getLogger("quiz")
 
@@ -383,6 +382,14 @@ def run(dry_run: bool = False) -> Optional[Path]:
             schema=DailyQuiz,
             max_output_tokens=4096,
         )
+    except DailyQuotaExhausted:
+        # Quiz is just one call/day — when quota is gone, log a single
+        # warning (no traceback) and move on. Tomorrow's cron tries again.
+        log.warning(
+            "quiz: skipped — Gemini daily quota exhausted. "
+            "Today's quiz won't be generated; tomorrow's run will retry."
+        )
+        return None
     except Exception as exc:  # noqa: BLE001
         log.exception("quiz: LLM call failed — %s", exc)
         return None
